@@ -2,6 +2,7 @@ import random
 import src.RuleOneInvestingCalculations as RuleOne
 from requests_futures.sessions import FuturesSession
 from src.Morningstar import MorningstarRatios
+from src.FMP import FMP
 from src.MSNMoney import MSNMoney
 from src.YahooFinance import YahooFinanceAnalysis
 from src.YahooFinance import YahooFinanceQuote
@@ -41,6 +42,7 @@ def fetchDataForTickerSymbol(ticker):
   # Make all network request asynchronously to build their portion of
   # the json results.
   data_fetcher.fetch_morningstar_ratios()
+  data_fetcher.fetch_fmp()
   data_fetcher.fetch_pe_ratios()
   data_fetcher.fetch_yahoo_finance_analysis()
   data_fetcher.fetch_yahoo_finance_quote()
@@ -197,6 +199,19 @@ class DataFetcher():
     })
     self.rpcs.append(finance_rpc)
 
+  def fetch_fmp(self):
+    def deco(key, func):
+      def f(*args, **kwargs):
+        return func(key, *args, **kwargs)
+      return f
+
+    self.fmp = FMP(self.ticker_symbol)
+    urls = self.fmp.get_urls()
+    session = self._create_session()
+    for key, url in urls.items():
+      rpc = session.get(url, hooks={'response': deco(key, self.parse_fmp)})
+      self.rpcs.append(rpc)
+
   # Called asynchronously upon completion of the URL fetch from
   # `fetch_morningstar_ratios`.
   def parse_morningstar_finances(self, response, *args, **kwargs):
@@ -221,6 +236,16 @@ class DataFetcher():
     success = self.ratios.parse_ratios(parsed_content.split('\n'))
     if not success:
       self.ratios = None
+    self.lock.release()
+  
+  def parse_fmp(self, key, response, *args, **kwargs):
+    self.lock.acquire()
+    if not self.fmp:
+      self.lock.release()
+      return
+    success = self.fmp.parse(key, response.text)
+    if not success:
+      self.fmp = None
     self.lock.release()
 
   def fetch_pe_ratios(self):
