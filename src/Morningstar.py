@@ -50,11 +50,11 @@ class MorningstarRatios:
         logging.error('No Morningstar finance data')
         return False
       self.equity = extract_float_data_for_key(self.finance_data, 'Book Value Per Share * USD')
-      self.equity_growth_rates = compute_growth_rates_for_data(self.equity)
+      self.equity_growth_rates = RuleOne.get_growth_rates(self.equity)
       if not self.equity:
         logging.error('Failed to parse BVPS.')
       self.free_cash_flow = extract_float_data_for_key(self.finance_data, 'Free Cash Flow USD Mil')
-      self.free_cash_flow_growth_rates = compute_growth_rates_for_data(self.free_cash_flow)
+      self.free_cash_flow_growth_rates = RuleOne.get_growth_rates(self.free_cash_flow)
       if not self.free_cash_flow:
         logging.error('Failed to parse Free Cash Flow.')
       else:
@@ -86,7 +86,7 @@ class MorningstarRatios:
         logging.error('No Morningstar rtios data')
         return False
       self.roic = extract_float_data_for_key(self.ratios_data, 'Return on Invested Capital %')
-      self.roic_averages = compute_averages_for_data(self.roic)
+      self.roic_averages = RuleOne.get_averages(self.roic)
       if not self.roic_averages:
         logging.error('Failed to parse ROIC')
       self.long_term_debt = extract_float_data_for_key(self.ratios_data, 'Long-Term Debt')
@@ -167,44 +167,3 @@ def extract_float_data_for_key(raw_data, key, include_ttm=False):
       else:
         return [float(x.replace(',', '')) for x in filter(None, row[1:-1])]
   return None
-
-
-def compute_growth_rates_for_data(data):
-  if data is None or len(data) < 2:
-    return None
-  results = []
-  year_over_year = RuleOne.compound_annual_growth_rate(data[-2], data[-1], 1)
-  results.append(year_over_year)
-  if len(data) > 3:
-    average_3 = RuleOne.compound_annual_growth_rate(data[-4], data[-1], 3)
-    results.append(average_3)
-  if len(data) > 5:
-    average_5 = RuleOne.compound_annual_growth_rate(data[-6], data[-1], 5)
-    results.append(average_5)
-  if len(data) > 6:
-    last_index = len(data) - 1
-    max = RuleOne.compound_annual_growth_rate(data[0], data[-1], last_index)
-    results.append(max)
-  return [x for x in results if x is not None]
-
-
-def _average(list):
-  return round(sum(list) / len(list), 2)
-
-
-def compute_averages_for_data(data):
-  """Calculates yearly averages from a set of yearly data. Assumes no TTM entry at the end."""
-  if data is None or len(data) < 2:
-    return None
-  results = []
-  results.append(data[-1])
-  if len(data) >= 3:
-    three_year = _average(data[-3:])
-    results.append(three_year)
-  if len(data) >= 5:
-    five_year = _average(data[-5:])
-    results.append(five_year)
-  if len(data) >= 6:
-    max = _average(data)
-    results.append(max)
-  return [x for x in results if x is not None]

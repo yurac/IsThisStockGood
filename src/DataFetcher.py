@@ -1,7 +1,7 @@
 import random
 import src.RuleOneInvestingCalculations as RuleOne
 from requests_futures.sessions import FuturesSession
-from src.Morningstar import MorningstarRatios
+from src.FMP import FMP
 from src.MSNMoney import MSNMoney
 from src.YahooFinance import YahooFinanceAnalysis
 from src.YahooFinance import YahooFinanceQuote
@@ -40,7 +40,7 @@ def fetchDataForTickerSymbol(ticker):
 
   # Make all network request asynchronously to build their portion of
   # the json results.
-  data_fetcher.fetch_morningstar_ratios()
+  data_fetcher.fetch_fmp()
   data_fetcher.fetch_pe_ratios()
   data_fetcher.fetch_yahoo_finance_analysis()
   data_fetcher.fetch_yahoo_finance_quote()
@@ -50,28 +50,26 @@ def fetchDataForTickerSymbol(ticker):
   for rpc in data_fetcher.rpcs:
     rpc.result()
 
-  ratios = data_fetcher.ratios
-  if ratios:
-    ratios.calculate_long_term_debt()
+  fmp = data_fetcher.fmp
+  fmp.analyze()
+
   pe_ratios = data_fetcher.pe_ratios
   yahoo_finance_analysis = data_fetcher.yahoo_finance_analysis
   yahoo_finance_quote = data_fetcher.yahoo_finance_quote
-  if not ratios:
-    return None
-  margin_of_safety_price, sticker_price = _calculateMarginOfSafetyPrice(ratios, pe_ratios, yahoo_finance_analysis)
-  payback_time = _calculatePaybackTime(ratios, yahoo_finance_quote, yahoo_finance_analysis)
+  margin_of_safety_price, sticker_price = _calculateMarginOfSafetyPrice(fmp, pe_ratios, yahoo_finance_analysis)
+  payback_time = _calculatePaybackTime(fmp, yahoo_finance_quote, yahoo_finance_analysis)
   template_values = {
     'ticker' : ticker,
     'name' : yahoo_finance_quote.name if yahoo_finance_quote and yahoo_finance_quote.name else 'null',
-    'roic': ratios.roic_averages if ratios.roic_averages else [],
-    'eps': ratios.eps_growth_rate_averages if ratios.eps_growth_rate_averages else [],
-    'sales': ratios.sales_growth_rate_averages if ratios.sales_growth_rate_averages else [],
-    'equity': ratios.equity_growth_rates if ratios.equity_growth_rates else [],
-    'cash': ratios.free_cash_flow_growth_rates if ratios.free_cash_flow_growth_rates else [],
-    'long_term_debt' : ratios.long_term_debt,
-    'free_cash_flow' : ratios.recent_free_cash_flow,
-    'debt_payoff_time' : ratios.debt_payoff_time,
-    'debt_equity_ratio' : ratios.debt_equity_ratio if ratios.debt_equity_ratio >= 0 else -1,
+    'roic': fmp.roic_averages if fmp.roic_averages else [],
+    'eps': fmp.eps_growth_rate_averages if fmp.eps_growth_rate_averages else [],
+    'sales': fmp.sales_growth_rate_averages if fmp.sales_growth_rate_averages else [],
+    'equity': fmp.equity_growth_rates if fmp.equity_growth_rates else [],
+    'cash': fmp.free_cash_flow_growth_rates if fmp.free_cash_flow_growth_rates else [],
+    'long_term_debt' : fmp.long_term_debt,
+    'free_cash_flow' : fmp.recent_free_cash_flow,
+    'debt_payoff_time' : fmp.debt_payoff_time,
+    'debt_equity_ratio' : fmp.debt_equity_ratio if fmp.debt_equity_ratio >= 0 else -1,
     'margin_of_safety_price' : margin_of_safety_price if margin_of_safety_price else 'null',
     'current_price' : yahoo_finance_quote.current_price if yahoo_finance_quote and yahoo_finance_quote.current_price else 'null',
     'sticker_price' : sticker_price if sticker_price else 'null',
@@ -80,78 +78,32 @@ def fetchDataForTickerSymbol(ticker):
   }
   return template_values
 
-
-def _jsonpToCSV(s):
-  # Handle a weird edge case where morningstar may return
-  # the string '{"componentData":null}'
-  if s == '{"componentData":null}':
-    return ''
-
-  arr = []
-  ignore = False
-  printing = False
-  s = s.replace(',', '')
-  s = s.replace('\/', '/')
-  s = s.replace('&amp', '&')
-  s = s.replace('&nbsp;', ' ')
-  s = s.replace('</tr>', '\n')
-  for c in s:
-    if c == '<':
-      ignore = True
-      printing = False
-      continue
-    elif c == '>':
-      ignore = False
-      printing = False
-      continue
-    elif not ignore:
-      if not printing:
-        printing = True
-        arr.append(',')
-      arr.append(c)
-  output = ''.join(arr)
-  output = output.replace('\n,', '\n')
-  output = output.replace(',\n', '\n')
-  output = output.replace(' ,', ' ')
-  output = output.replace('&mdash;', '')
-  if len(output) == 0:
-    return ''
-  return output[1:] if output[0] == ',' else output
-
-
-def _calculateMarginOfSafetyPrice(ratios, pe_ratios, yahoo_finance_analysis):
-  if not ratios or not pe_ratios or not yahoo_finance_analysis:
-    return None, None
-
-  if not yahoo_finance_analysis.five_year_growth_rate or not ratios.equity_growth_rates:
+def _calculateMarginOfSafetyPrice(fmp, pe_ratios, yahoo_finance_analysis):
+  if not yahoo_finance_analysis.five_year_growth_rate or not fmp.equity_growth_rates:
     return None, None
   growth_rate = min(float(yahoo_finance_analysis.five_year_growth_rate),
-                    float(ratios.equity_growth_rates[-1]))
+                    float(fmp.equity_growth_rates[-1]))
   # Divide the growth rate by 100 to convert from percent to decimal.
   growth_rate = growth_rate / 100.0
 
-  if not ratios.ttm_eps or not pe_ratios.pe_low or not pe_ratios.pe_high:
+  if not fmp.ttm_eps or not pe_ratios.pe_low or not pe_ratios.pe_high:
     return None, None
   margin_of_safety_price, sticker_price = \
-      RuleOne.margin_of_safety_price(float(ratios.ttm_eps), growth_rate,
+      RuleOne.margin_of_safety_price(float(fmp.ttm_eps), growth_rate,
                                      float(pe_ratios.pe_low), float(pe_ratios.pe_high))
   return margin_of_safety_price, sticker_price
 
-
-def _calculatePaybackTime(ratios, yahoo_finance_quote, yahoo_finance_analysis):
-  if not ratios or not yahoo_finance_quote or not yahoo_finance_analysis:
-    return None
-
-  if not yahoo_finance_analysis.five_year_growth_rate or not ratios.equity_growth_rates:
+def _calculatePaybackTime(fmp, yahoo_finance_quote, yahoo_finance_analysis):
+  if not yahoo_finance_analysis.five_year_growth_rate or not fmp.equity_growth_rates:
     return None
   growth_rate = min(float(yahoo_finance_analysis.five_year_growth_rate),
-                    float(ratios.equity_growth_rates[-1]))
+                    float(fmp.equity_growth_rates[-1]))
   # Divide the growth rate by 100 to convert from percent to decimal.
   growth_rate = growth_rate / 100.0
 
-  if not ratios.ttm_net_income or not yahoo_finance_quote.market_cap:
+  if not fmp.ttm_net_income or not yahoo_finance_quote.market_cap:
     return None
-  payback_time = RuleOne.payback_time(yahoo_finance_quote.market_cap, ratios.ttm_net_income, growth_rate)
+  payback_time = RuleOne.payback_time(yahoo_finance_quote.market_cap, fmp.ttm_net_income, growth_rate)
   return payback_time
 
 
@@ -184,43 +136,27 @@ class DataFetcher():
     })
     return session
 
-  def fetch_morningstar_ratios(self):
-    self.ratios = MorningstarRatios(self.ticker_symbol)
+  def fetch_fmp(self):
+    def deco(key, func):
+      def f(*args, **kwargs):
+        return func(key, *args, **kwargs)
+      return f
+
+    self.fmp = FMP(self.ticker_symbol)
+    urls = self.fmp.get_urls()
     session = self._create_session()
-    key_stat_rpc = session.get(self.ratios.key_stat_url, hooks={
-       'response': self.parse_morningstar_ratios,
-    })
-    self.rpcs.append(key_stat_rpc)
+    for key, url in urls.items():
+      rpc = session.get(url, hooks={'response': deco(key, self.parse_fmp)})
+      self.rpcs.append(rpc)
 
-    finance_rpc = session.get(self.ratios.finance_url, hooks={
-       'response': self.parse_morningstar_finances,
-    })
-    self.rpcs.append(finance_rpc)
-
-  # Called asynchronously upon completion of the URL fetch from
-  # `fetch_morningstar_ratios`.
-  def parse_morningstar_finances(self, response, *args, **kwargs):
+  def parse_fmp(self, key, response, *args, **kwargs):
     self.lock.acquire()
-    if not self.ratios:
+    if not self.fmp:
       self.lock.release()
       return
-    parsed_content = _jsonpToCSV(response.text)
-    success = self.ratios.parse_finances(parsed_content.split('\n'))
+    success = self.fmp.parse(key, response.text)
     if not success:
-      self.ratios = None
-    self.lock.release()
-
-  # Called asynchronously upon completion of the URL fetch from
-  # `fetch_morningstar_ratios`.
-  def parse_morningstar_ratios(self, response, *args, **kwargs):
-    self.lock.acquire()
-    if not self.ratios:
-      self.lock.release()
-      return
-    parsed_content = _jsonpToCSV(response.text)
-    success = self.ratios.parse_ratios(parsed_content.split('\n'))
-    if not success:
-      self.ratios = None
+      self.fmp = None
     self.lock.release()
 
   def fetch_pe_ratios(self):

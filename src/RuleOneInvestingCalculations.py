@@ -254,3 +254,41 @@ def calculate_margin_of_safety(sticker_price, margin_of_safety=0.5):
   if not sticker_price:
     return None
   return sticker_price * (1 - margin_of_safety)
+
+def get_growth_rates(data):
+  if data is None or len(data) < 2:
+    return None
+  results = []
+  year_over_year = compound_annual_growth_rate(data[-2], data[-1], 1)
+  results.append(year_over_year)
+  if len(data) > 3:
+    average_3 = compound_annual_growth_rate(data[-4], data[-1], 3)
+    results.append(average_3)
+  if len(data) > 5:
+    average_5 = compound_annual_growth_rate(data[-6], data[-1], 5)
+    results.append(average_5)
+  if len(data) > 6:
+    last_index = len(data) - 1
+    max = compound_annual_growth_rate(data[0], data[-1], last_index)
+    results.append(max)
+  return [x for x in results if x is not None]
+
+def _average(list):
+  return round(sum(list) / len(list), 2)
+
+def get_averages(data):
+  """Calculates yearly averages from a set of yearly data. Assumes no TTM entry at the end."""
+  if data is None or len(data) < 2:
+    return None
+  results = []
+  results.append(data[-1])
+  if len(data) >= 3:
+    three_year = _average(data[-3:])
+    results.append(three_year)
+  if len(data) >= 5:
+    five_year = _average(data[-5:])
+    results.append(five_year)
+  if len(data) >= 6:
+    max = _average(data)
+    results.append(max)
+  return [x for x in results if x is not None]
