@@ -70,21 +70,25 @@ class FMP:
   def analyze(self):
       self.long_term_debt = self.results[FMP.BALANCE][0]["longTermDebt"]
       self.free_cash_flow = list(reversed(list(map(lambda cashflow: cashflow["netCashProvidedByOperatingActivities"], self.results[FMP.CASHFLOW]))))
+      print("CASH", self.free_cash_flow)
       self.recent_free_cash_flow = self.free_cash_flow[-1] 
       self.free_cash_flow_growth_rates = RuleOne.get_growth_rates(self.free_cash_flow)
       self.debt_payoff_time = self.long_term_debt / self.recent_free_cash_flow
       self.equity = list(reversed(list(map(lambda balance: balance["totalStockholdersEquity"], self.results[FMP.BALANCE]))))
+      print("EQUITY", self.equity)
       self.equity_growth_rates = RuleOne.get_growth_rates(self.equity)
       total_liabilities = self.results[FMP.BALANCE][0]["totalLiabilities"]
       self.debt_equity_ratio = total_liabilities / self.equity[-1]
       eps = list(reversed(list(map(lambda income: income["epsdiluted"], self.results[FMP.INCOME]))))
       self.eps_growth_rate_averages = RuleOne.get_growth_rates(eps)
       self.ttm_eps = eps[-1]
+      print("EPS", eps)
       net_income = list(reversed(list(map(lambda income: income["netIncome"], self.results[FMP.INCOME]))))
       self.ttm_net_income = net_income[-1]
       self.roic = list(reversed(list(map(self.get_roic, zip(self.results[FMP.BALANCE], self.results[FMP.INCOME])))))
       self.roic_averages = RuleOne.get_averages(self.roic)
       sales = list(reversed(list(map(lambda income: income["revenue"], self.results[FMP.INCOME]))))
+      print("SALES", sales)
       self.sales_growth_rate_averages = RuleOne.get_growth_rates(sales)
 
   def parse(self, key, data):

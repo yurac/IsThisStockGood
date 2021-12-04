@@ -88,6 +88,7 @@ def _calculateMarginOfSafetyPrice(fmp, pe_ratios, yahoo_finance_analysis):
 
   if not fmp.ttm_eps or not pe_ratios.pe_low or not pe_ratios.pe_high:
     return None, None
+  print("YURI", fmp.ttm_eps, growth_rate, pe_ratios.pe_low, pe_ratios.pe_high)
   margin_of_safety_price, sticker_price = \
       RuleOne.margin_of_safety_price(float(fmp.ttm_eps), growth_rate,
                                      float(pe_ratios.pe_low), float(pe_ratios.pe_high))
